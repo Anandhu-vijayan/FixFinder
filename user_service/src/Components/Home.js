@@ -4,7 +4,6 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import axios from "axios";
 
-// Fallback default icon for Leaflet
 const createDefaultIcon = () => {
   return L.icon({
     iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
@@ -20,14 +19,13 @@ const ServiceLocationApp = () => {
   const [selectedService, setSelectedService] = useState("");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
-  const [location, setLocation] = useState(null); // Initially no selected location
+  const [selectedLocation, setSelectedLocation] = useState(null); // Location selected from suggestions
+  const [isMapReady, setIsMapReady] = useState(false); // Flag to check if the map is initialized
   const mapRef = useRef(null);
+  const LOCATIONIQ_API_KEY = "pk.17a9b3ccce81c30ec3c70598dfe10beb"; // Replace with your actual API key
+  const INDIA_COORDINATES = { lat: 20.5937, lon: 78.9629 };
 
-  const LOCATIONIQ_API_KEY = "pk.17a9b3ccce81c30ec3c70598dfe10beb";
-
-  const INDIA_COORDINATES = { lat: 20.5937, lon: 78.9629 }; // Default to India's center
-
-  // Handle location input changes
+  // Fetch location suggestions based on user input
   const handleInputChange = async (e) => {
     const value = e.target.value;
     setQuery(value);
@@ -54,35 +52,39 @@ const ServiceLocationApp = () => {
     }
   };
 
-  // Handle location suggestion selection
+  // Handle selection of a suggestion
   const handleSuggestionSelect = (suggestion) => {
     const lat = parseFloat(suggestion.lat);
     const lon = parseFloat(suggestion.lon);
-    setLocation({ lat, lon }); // Update state with selected coordinates
-    setQuery(suggestion.display_name); // Update input value
-    setSuggestions([]); // Clear suggestions
+    setSelectedLocation({ lat, lon });
+    setQuery(suggestion.display_name);
+    setSuggestions([]);
+    console.log("Location selected:", { lat, lon });
+  };
 
-    // Center and zoom the map to the selected coordinates
-    console.log(mapRef.current);
-    if (mapRef.current) {
-      mapRef.current.setView([lat, lon], 13); // Set zoom to level 13
+  // Update the map to the selected location when the Search button is clicked
+  const handleSearch = () => {
+    if (mapRef.current && selectedLocation) {
+      const zoomLevel = 13; // Desired zoom level
+      mapRef.current.flyTo([selectedLocation.lat, selectedLocation.lon], zoomLevel);
+      console.log("Map flew to:", selectedLocation);
+    } else {
+      alert("Please select a valid location before searching!");
     }
   };
 
-  // Zoom to location whenever `location` state changes
+  // Trigger the map control (flyTo) once the map is ready
   useEffect(() => {
-    if (location && mapRef.current) {
-      mapRef.current.setView([location.lat, location.lon], 13); // Zoom to selected location
+    if (mapRef.current && selectedLocation && isMapReady) {
+      mapRef.current.flyTo([selectedLocation.lat, selectedLocation.lon], 13);
     }
-  }, [location]); // Trigger effect whenever location changes
+  }, [selectedLocation, isMapReady]); // Re-run whenever selectedLocation or isMapReady changes
 
   return (
     <div className="flex flex-col lg:flex-row h-screen">
-      {/* Left Side - Form */}
       <div className="w-full lg:w-1/3 p-6 bg-gray-100">
         <h2 className="text-xl font-bold mb-4">Find Your Service</h2>
 
-        {/* Dropdown for selecting service */}
         <div className="mb-4">
           <label htmlFor="service" className="block text-gray-700 mb-2">
             Select Service
@@ -101,7 +103,6 @@ const ServiceLocationApp = () => {
           </select>
         </div>
 
-        {/* Location autocomplete */}
         <div className="mb-4">
           <label htmlFor="location" className="block text-gray-700 mb-2">
             Enter Location
@@ -129,13 +130,21 @@ const ServiceLocationApp = () => {
           )}
         </div>
 
-        {/* Display selected lat/lon */}
+        {/* Search button */}
+        <button
+          onClick={handleSearch}
+          className="w-full bg-blue-500 text-white p-2 rounded mt-2"
+          disabled={!selectedLocation} // Disable the button if no location is selected
+        >
+          Search
+        </button>
+
         <div className="mt-4 p-2 bg-gray-200 rounded">
           <h3 className="text-gray-700 font-semibold">Selected Location:</h3>
-          {location ? (
+          {selectedLocation ? (
             <>
-              <p className="text-sm text-gray-600">Latitude: {location.lat}</p>
-              <p className="text-sm text-gray-600">Longitude: {location.lon}</p>
+              <p className="text-sm text-gray-600">Latitude: {selectedLocation.lat}</p>
+              <p className="text-sm text-gray-600">Longitude: {selectedLocation.lon}</p>
             </>
           ) : (
             <p className="text-sm text-gray-600">Default location: India</p>
@@ -143,28 +152,33 @@ const ServiceLocationApp = () => {
         </div>
       </div>
 
-      {/* Right Side - Map */}
       <div className="w-full lg:w-2/3 h-96 lg:h-full">
         <MapContainer
-          center={location ? [location.lat, location.lon] : [INDIA_COORDINATES.lat, INDIA_COORDINATES.lon]} // Center on India by default
-          zoom={location ? 13 : 5} // Default zoom level 5 for India
+          center={INDIA_COORDINATES}
+          zoom={13} // Set the initial zoom level
           style={{ height: "100%", width: "100%" }}
-          whenCreated={(mapInstance) => (mapRef.current = mapInstance)}
+          whenCreated={(mapInstance) => {
+            mapRef.current = mapInstance;
+            setIsMapReady(true); // Set map as ready once it's created
+            console.log("Map instance created:", mapRef.current);
+          }}
         >
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution="&copy; OpenStreetMap contributors"
           />
-          {(location || INDIA_COORDINATES) && (
-            <Marker
-              position={location ? [location.lat, location.lon] : [INDIA_COORDINATES.lat, INDIA_COORDINATES.lon]}
-              icon={createDefaultIcon()}
-            >
-              <Popup>
-                <span>{location ? selectedService || "Searched Location" : "Default Location: India"}</span>
-              </Popup>
-            </Marker>
-          )}
+          <Marker
+            position={
+              selectedLocation
+                ? [selectedLocation.lat, selectedLocation.lon]
+                : INDIA_COORDINATES
+            }
+            icon={createDefaultIcon()}
+          >
+            <Popup>
+              <span>{selectedService || "Searched Location"}</span>
+            </Popup>
+          </Marker>
         </MapContainer>
       </div>
     </div>
